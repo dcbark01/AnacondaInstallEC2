@@ -38,6 +38,7 @@ conda create -y --name python3
 # Install necessary Python packages
 # Note that 'source' is deprecated, so now we should be using 'conda' to activate/deactivate envs
 conda activate python3
+conda install -y -c conda-forge awscli 
 
 # Setup the credentials for the AWS CLI
 aws configure set aws_access_key_id $1
