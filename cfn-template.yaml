@@ -1,0 +1,113 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: The CloudFormation template for AWS resources required by amazon rekognition video analyzer.
+
+Parameters:
+
+  SshKeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Default: <YOUR-SSH-KEY-NAME-HERE>
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+  SSHLocation:
+    Description: ' The IP address range that can be used to SSH to the EC2 instances'
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+
+
+  AwsAccessKeyId:
+    Type: String
+    MinLength: "1"
+    Default: <YOUR-AWS-ACCESS-KEY-HERE>
+    Description: "AWS API access key ID"
+
+  AwsSecretKey:
+    Type: String
+    MinLength: "1"
+    Default: <YOUR-AWS-SECRET-HERE>
+    Description: "AWS API secret key"
+
+
+Resources:
+
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Metadata:
+      'AWS::CloudFormation::Init':
+        configSets:
+          InstallAndRun:
+            - GetInstallScript
+            - InstallAnaconda
+ 
+        GetInstallScript:
+          commands:
+            01_download_script:
+              command: wget -O /home/ec2-user/install.sh "https://raw.githubusercontent.com/dcbark01/AnacondaInstallEC2/master/install.sh"
+        InstallAnaconda:
+          commands:
+            01_modify_permissions:
+              command: chmod 755 /home/ec2-user/install.sh
+            02_install:
+              command: !Sub
+                  - /home/ec2-user/install.sh ${aws_api_key} ${aws_secret}
+                  - aws_api_key: !Ref AwsAccessKeyId
+                    aws_secret: !Ref AwsSecretKey
+    Properties:
+      ImageId: "ami-0de53d8956e8dcf80"
+      InstanceType: t2.micro
+      SecurityGroups:
+        - !Ref MySecurityGroup
+      KeyName: !Ref SshKeyName
+      UserData: !Base64
+        'Fn::Join':
+          - ''
+          - - |
+              #!/bin/bash -xe
+            - |
+              yum update -y aws-cfn-bootstrap
+            - |
+              # Install the files and packages from the metadata
+            - '/opt/aws/bin/cfn-init -v '
+            - '         --stack '
+            - !Ref 'AWS::StackName'
+            - '         --resource MyEC2Instance '
+            - '         --configsets InstallAndRun '
+            - '         --region '
+            - !Ref 'AWS::Region'
+            - |+
+
+            - |
+              # Signal the status from cfn-init
+            - '/opt/aws/bin/cfn-signal -e $? '
+            - '         --stack '
+            - !Ref 'AWS::StackName'
+            - '         --resource MyEC2Instance '
+            - '         --region '
+            - !Ref 'AWS::Region'
+            - |+
+      Tags:
+        -
+          Key: "Name"
+          Value: "MyEC2Instance"
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT10M  # 10 min should be long enough for Anaconda distribution, but it is pretty slow so may have to play with this
+
+  MySecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable HTTP access via port 80
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: !Ref SSHLocation
